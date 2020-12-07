@@ -1,0 +1,196 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "(SA0011) - sagemaker-av-visual-perception: SageMaker permissions stack"
+Parameters:
+  SolutionPrefix:
+    Description: Enter the name of the prefix for the solution used for naming
+    Type: String
+    Default: "sagemaker-av-visual-perception"
+  SolutionS3BucketName:
+    Description: Enter the name of the S3 bucket for the solution
+    Type: String
+    Default: "sagemaker-soln-*"
+  StackVersion:
+    Description: Enter the name of the template stack version
+    Type: String
+    Default: "release"
+
+Mappings:
+  S3:
+    release:
+      BucketPrefix: "sagemaker-solutions-prod"
+    development:
+      BucketPrefix: "sagemaker-solutions-devo"
+
+Resources:
+  NotebookInstanceExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${SolutionPrefix}-${AWS::Region}-nb-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+              - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+              Service:
+              - sagemaker.amazonaws.com
+              - lambda.amazonaws.com
+              - states.amazonaws.com
+            Action:
+            - 'sts:AssumeRole'
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Needs to be explicitly named to tighten launch permissions policy
+
+  NotebookInstanceIAMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${SolutionPrefix}-nb-instance-policy"
+      Roles:
+        - !Ref NotebookInstanceExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - sagemaker:*TrainingJob*
+          - sagemaker:*LabelingJob*
+          - sagemaker:*TransformJob*
+          - sagemaker:*Workteam*
+          - sagemaker:*Workforce*
+          Resource:
+          - "*"
+          - !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:*"
+        - Effect: Allow
+          Action:
+          - cognito-idp:AdminAddUserToGroup
+          - cognito-idp:CreateGroup
+          - cognito-idp:CreateUserPoolDomain
+          - cognito-idp:DeleteGroup
+          - cognito-idp:DeleteUserPoolDomain
+          - cognito-idp:DescribeUserPool
+          - cognito-idp:DescribeUserPoolClient
+          - cognito-idp:ListUsers
+          - cognito-idp:UpdateUserPool
+          - cognito-idp:UpdateUserPoolClient
+          Resource:
+          - "*"
+        - Effect: Allow
+          Action:
+          - ecr:GetAuthorizationToken
+          - ecr:GetDownloadUrlForLayer
+          - ecr:BatchGetImage
+          - ecr:PutImage
+          - ecr:BatchCheckLayerAvailability
+          Resource:
+          - "*"
+          - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*"
+        - Effect: Allow
+          Action:
+          - cloudwatch:PutMetricData
+          - cloudwatch:GetMetricData
+          - cloudwatch:GetMetricStatistics
+          - cloudwatch:ListMetrics
+          Resource:
+          - !Sub "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:*"
+        - Effect: Allow
+          Action:
+          - lambda:InvokeFunction
+          Resource:
+          - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:sagemaker-*"
+        - Effect: Allow
+          Action:
+          - events:PutTargets
+          - events:PutRule
+          - events:DescribeRule
+          Resource:
+          - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForStepFunctionsExecutionRule"
+          - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForSageMakerTransformJobsRule"
+          - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForSageMakerTrainingJobsRule"
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:DescribeLogStreams
+          - logs:GetLogEvents
+          - logs:PutLogEvents
+          Resource:
+          - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/sagemaker/*"
+          - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+        - Effect: Allow
+          Action:
+          - iam:PassRole
+          Resource:
+          - !GetAtt NotebookInstanceExecutionRole.Arn
+          Condition:
+            StringEquals:
+              iam:PassedToService: sagemaker.amazonaws.com
+        - Effect: Allow
+          Action:
+          - iam:GetRole
+          Resource:
+          - !GetAtt NotebookInstanceExecutionRole.Arn
+        - Effect: Allow
+          Action:
+          - s3:ListBucket
+          - s3:GetObject
+          - s3:PutObject
+          - s3:GetObjectVersion
+          - s3:DeleteObject
+          - s3:DeleteBucket
+          Resource:
+          - !Sub "arn:aws:s3:::${SolutionS3BucketName}"
+          - !Sub "arn:aws:s3:::${SolutionS3BucketName}/*"
+          - !Sub
+            - "arn:aws:s3:::${SolutionRefBucketBase}-${Region}"
+            - SolutionRefBucketBase: !FindInMap [S3, !Ref StackVersion, BucketPrefix]
+              Region: !Ref AWS::Region
+          - !Sub
+            - "arn:aws:s3:::${SolutionRefBucketBase}-${Region}/*"
+            - SolutionRefBucketBase: !FindInMap [S3, !Ref StackVersion, BucketPrefix]
+              Region: !Ref AWS::Region
+        - Effect: Allow
+          Action:
+          - s3:CreateBucket
+          - s3:ListBucket
+          - s3:GetObject
+          - s3:GetObjectVersion
+          - s3:PutObject
+          - s3:DeleteObject
+          Resource:
+          - !Sub "arn:aws:s3:::sagemaker-${AWS::Region}-${AWS::AccountId}"
+          - !Sub "arn:aws:s3:::sagemaker-${AWS::Region}-${AWS::AccountId}/*"
+        - Effect: Allow
+          Action:
+          - states:DescribeExecution
+          - states:DescribeStateMachine
+          - states:DescribeStateMachineForExecution
+          - states:GetExecutionHistory
+          - states:ListExecutions
+          - states:ListTagsForResource
+          - states:StartExecution
+          - states:StopExecution
+          - states:TagResource
+          - states:UntagResource
+          - states:UpdateStateMachine
+          Resource:
+          - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:sagemaker-*"
+          - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:sagemaker-*:*"
+        - Effect: Allow
+          Action:
+          - states:ListStateMachines
+          Resource:
+          - "*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: ECR GetAuthorizationToken and states ListMachines are non resource-specific action
+
+Outputs:
+  RoleArn:
+    Description: "SageMaker Execution Role for the solution"
+    Value: !GetAtt NotebookInstanceExecutionRole.Arn

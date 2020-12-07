@@ -1,0 +1,242 @@
+{
+  "LabelAttributeName": "category",
+  "meta_data": {
+    "IntermediateFolderUri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/",
+    "IntermediateManifestS3Uri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/input.manifest",
+    "counts": {
+      "input_total": 24,
+      "human_label": 8,
+      "auto_label": 0,
+      "unlabeled": 16,
+      "human_label_percentage": 33,
+      "validation": 2
+    },
+    "human_label_config": {
+      "human_input_s3_uri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/human_input.manifest",
+      "labeling_job_name": "kimnam-coco-bbox-7DQDDpG1",
+      "labeling_job_output_uri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/labeling-job-7DQDDpG1/"
+    },
+    "ValidationS3Uri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/validation_input.manifest",
+    "training_config": {
+      "TrainingJobName": "kimnam-coco-bbox-lvvFslWG",
+      "trainS3Uri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/active-learning-lvvFslWG/training_input.manifest",
+      "ResourceConfig": {
+        "InstanceCount": 1,
+        "InstanceType": "ml.p3.2xlarge",
+        "VolumeSizeInGB": 60
+      },
+      "AlgorithmSpecification": {
+        "TrainingImage": "811284229777.dkr.ecr.us-east-1.amazonaws.com/object-detection:1",
+        "TrainingInputMode": "Pipe"
+      },
+      "HyperParameters": {
+        "base_network": "vgg-16",
+        "early_stopping": "false",
+        "early_stopping_min_epochs": "10",
+        "early_stopping_patience": "5",
+        "early_stopping_tolerance": "0.0",
+        "epochs": "30",
+        "freeze_layer_pattern": "false",
+        "image_shape": "300",
+        "label_width": "350",
+        "learning_rate": "0.001",
+        "lr_scheduler_factor": "0.1",
+        "mini_batch_size": "1",
+        "momentum": "0.9",
+        "nms_threshold": "0.45",
+        "num_classes": "1",
+        "num_training_samples": "24",
+        "optimizer": "sgd",
+        "overlap_threshold": "0.5",
+        "use_pretrained_model": "1",
+        "weight_decay": "0.0005"
+      },
+      "S3OutputPath": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/active-learning-lvvFslWG/",
+      "AttributeNames": [
+        "source-ref",
+        "category"
+      ]
+    },
+    "UnlabeledPrefixS3Uri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/active-learning-lvvFslWG/labeled_by_active_learning",
+    "UnlabeledManifestS3Uri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/active-learning-lvvFslWG/unlabeled.manifest",
+    "transform_config": {
+      "TransformJobName": "kimnam-coco-bbox-lvvFslWG",
+      "ModelName": "kimnam-coco-bbox-lvvFslWG",
+      "S3OutputPath": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/active-learning-lvvFslWG/"
+    }
+  },
+  "LabelingJobNamePrefix": "kimnam-coco-bbox",
+  "LabelCategoryConfigS3Uri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/artifacts/class_labels.json",
+  "RoleArn": "arn:aws:iam::412868550678:role/service-role/AmazonSageMaker-ExecutionRole-20200521T132504",
+  "training_job_result": {
+    "TrainingJobName": "kimnam-coco-bbox-lvvFslWG",
+    "TrainingJobArn": "arn:aws:sagemaker:us-east-1:412868550678:training-job/kimnam-coco-bbox-lvvfslwg",
+    "ModelArtifacts": {
+      "S3ModelArtifacts": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/active-learning-lvvFslWG/kimnam-coco-bbox-lvvFslWG/output/model.tar.gz"
+    },
+    "TrainingJobStatus": "Completed",
+    "SecondaryStatus": "Completed",
+    "HyperParameters": {
+      "freeze_layer_pattern": "false",
+      "weight_decay": "0.0005",
+      "num_classes": "1",
+      "num_training_samples": "24",
+      "early_stopping": "false",
+      "overlap_threshold": "0.5",
+      "image_shape": "300",
+      "early_stopping_patience": "5",
+      "label_width": "350",
+      "momentum": "0.9",
+      "nms_threshold": "0.45",
+      "lr_scheduler_factor": "0.1",
+      "optimizer": "sgd",
+      "base_network": "vgg-16",
+      "early_stopping_tolerance": "0.0",
+      "use_pretrained_model": "1",
+      "epochs": "30",
+      "learning_rate": "0.001",
+      "early_stopping_min_epochs": "10",
+      "mini_batch_size": "1"
+    },
+    "AlgorithmSpecification": {
+      "TrainingImage": "811284229777.dkr.ecr.us-east-1.amazonaws.com/object-detection:1",
+      "TrainingInputMode": "PIPE"
+    },
+    "RoleArn": "arn:aws:iam::412868550678:role/service-role/AmazonSageMaker-ExecutionRole-20200521T132504",
+    "InputDataConfig": [
+      {
+        "ChannelName": "train",
+        "DataSource": {
+          "S3DataSource": {
+            "S3DataType": "AUGMENTED_MANIFEST_FILE",
+            "S3Uri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/active-learning-lvvFslWG/training_input.manifest",
+            "S3DataDistributionType": "FULLY_REPLICATED"
+          }
+        },
+        "ContentType": "application/x-recordio",
+        "CompressionType": "NONE",
+        "RecordWrapperType": "RECORDIO"
+      },
+      {
+        "ChannelName": "validation",
+        "DataSource": {
+          "S3DataSource": {
+            "S3DataType": "AUGMENTED_MANIFEST_FILE",
+            "S3Uri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/validation_input.manifest",
+            "S3DataDistributionType": "FULLY_REPLICATED"
+          }
+        },
+        "ContentType": "application/x-recordio",
+        "CompressionType": "NONE",
+        "RecordWrapperType": "RECORDIO"
+      }
+    ],
+    "OutputDataConfig": {
+      "S3OutputPath": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/active-learning-lvvFslWG/"
+    },
+    "ResourceConfig": {
+      "InstanceType": "ml.p3.2xlarge",
+      "InstanceCount": 1,
+      "VolumeSizeInGB": 60
+    },
+    "StoppingCondition": {
+      "MaxRuntimeInSeconds": 432000
+    },
+    "CreationTime": 1591309420239,
+    "TrainingStartTime": 1591309575396,
+    "TrainingEndTime": 1591309673821,
+    "LastModifiedTime": 1591309673821,
+    "SecondaryStatusTransitions": [
+      {
+        "Status": "Starting",
+        "StartTime": 1591309420239,
+        "EndTime": 1591309575396,
+        "StatusMessage": "Preparing the instances for training"
+      },
+      {
+        "Status": "Downloading",
+        "StartTime": 1591309575396,
+        "EndTime": 1591309597068,
+        "StatusMessage": "Downloading input data"
+      },
+      {
+        "Status": "Training",
+        "StartTime": 1591309597068,
+        "EndTime": 1591309656918,
+        "StatusMessage": "Training image download completed. Training in progress."
+      },
+      {
+        "Status": "Uploading",
+        "StartTime": 1591309656918,
+        "EndTime": 1591309673821,
+        "StatusMessage": "Uploading generated training model"
+      },
+      {
+        "Status": "Completed",
+        "StartTime": 1591309673821,
+        "EndTime": 1591309673821,
+        "StatusMessage": "Training job completed"
+      }
+    ],
+    "Tags": {
+      "AWS_STEP_FUNCTIONS_EXECUTION_ARN": "arn:aws:states:us-east-1:412868550678:execution:ActiveLearning-kimnam-active-learning-01:7919a01e-5832-bcca-d798-8f338da74286",
+      "MANAGED_BY_AWS": "STARTED_BY_STEP_FUNCTIONS"
+    }
+  },
+  "save_model_result": {
+    "ModelArn": "arn:aws:sagemaker:us-east-1:412868550678:model/kimnam-coco-bbox-lvvfslwg",
+    "SdkHttpMetadata": {
+      "HttpHeaders": {
+        "Content-Length": "87",
+        "Content-Type": "application/x-amz-json-1.1",
+        "Date": "Thu, 04 Jun 2020 22:27:59 GMT",
+        "x-amzn-RequestId": "81f7f6fe-862e-4f1a-b0a7-2556af549d4d"
+      },
+      "HttpStatusCode": 200
+    },
+    "SdkResponseMetadata": {
+      "RequestId": "81f7f6fe-862e-4f1a-b0a7-2556af549d4d"
+    }
+  },
+  "transform_job_result": {
+    "TransformJobName": "kimnam-coco-bbox-lvvFslWG",
+    "TransformJobArn": "arn:aws:sagemaker:us-east-1:412868550678:transform-job/kimnam-coco-bbox-lvvfslwg",
+    "TransformJobStatus": "Completed",
+    "ModelName": "kimnam-coco-bbox-lvvFslWG",
+    "MaxConcurrentTransforms": 0,
+    "MaxPayloadInMB": 0,
+    "BatchStrategy": "MULTI_RECORD",
+    "TransformInput": {
+      "DataSource": {
+        "S3DataSource": {
+          "S3DataType": "S3_PREFIX",
+          "S3Uri": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/active-learning-lvvFslWG/labeled_by_active_learning"
+        }
+      },
+      "ContentType": "image/jpeg",
+      "CompressionType": "NONE",
+      "SplitType": "NONE"
+    },
+    "TransformOutput": {
+      "S3OutputPath": "s3://sagemaker-us-east-1-412868550678/sagemaker-kimnam/coco-bbox/output/intermediate/active-learning-lvvFslWG/",
+      "AssembleWith": "NONE"
+    },
+    "TransformResources": {
+      "InstanceType": "ml.c5.xlarge",
+      "InstanceCount": 1
+    },
+    "CreationTime": 1591309683000,
+    "TransformStartTime": 1591309754000,
+    "TransformEndTime": 1591309890000,
+    "DataProcessing": {
+      "InputFilter": "$",
+      "OutputFilter": "$",
+      "JoinSource": "NONE"
+    },
+    "ExperimentConfig": {},
+    "Tags": {
+      "AWS_STEP_FUNCTIONS_EXECUTION_ARN": "arn:aws:states:us-east-1:412868550678:execution:ActiveLearning-kimnam-active-learning-01:7919a01e-5832-bcca-d798-8f338da74286",
+      "MANAGED_BY_AWS": "STARTED_BY_STEP_FUNCTIONS"
+    }
+  }
+}

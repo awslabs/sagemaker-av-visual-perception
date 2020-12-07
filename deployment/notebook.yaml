@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "(SA0011) - sagemaker-av-visual-perception: SageMaker permissions stack"
+Parameters:
+  SolutionPrefix:
+    Description: Enter the name of the prefix for the solution used for naming
+    Type: String
+  SolutionS3BucketName:
+    Description: Enter the name of the S3 bucket for the solution
+    Type: String
+  S3InputDataPrefix:
+    Description: S3 prefix where raw data is stored
+    Type: String
+    Default:  "raw-data"
+  SageMakerNotebookInstanceType:
+    Description: S3 prefix where raw data is stored
+    Type: String
+    Default:  "ml-m5.xlarge"
+  NotebookInstanceExecutionRoleArn:
+    Type: String
+    Description: Execution Role for the SageMaker notebook instance
+  StackVersion:
+    Type: String
+    Description: CloudFormation Stack version.
+    Default: "release"
+  CognitoUserPool:
+    Description: cognito user pool
+    Type: String
+  CognitoUserPoolGroup:
+    Type: String
+    Description: Cognito user pool group
+  CognitoClientID:
+    Type: String
+    Description: Cognito client id
+  StepFunctionsActiveLearningPipeline:
+    Type: String
+    Description: Step functions state machine arn for active learning pipeline
+
+Mappings:
+  S3:
+    release:
+      BucketPrefix: "sagemaker-solutions-prod"
+    development:
+      BucketPrefix: "sagemaker-solutions-devo"
+  SageMaker:
+    Source:
+      S3Key: "Visual-perception-with-active-learning/source/sagemaker/"
+
+Resources:
+  NotebookInstance:
+    Type: AWS::SageMaker::NotebookInstance
+    Properties:
+      DirectInternetAccess: Enabled
+      InstanceType: !Ref SageMakerNotebookInstanceType
+      LifecycleConfigName: !GetAtt LifeCycleConfig.NotebookInstanceLifecycleConfigName
+      NotebookInstanceName: !Sub "${SolutionPrefix}-notebook-instance"
+      RoleArn: !Ref NotebookInstanceExecutionRoleArn
+      VolumeSizeInGB: 120
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W1201
+            reason: Solution does not have KMS encryption enabled by default
+  LifeCycleConfig:
+    Type: AWS::SageMaker::NotebookInstanceLifecycleConfig
+    Properties:
+      NotebookInstanceLifecycleConfigName: !Sub "${SolutionPrefix}-nb-lifecycle-config"
+      OnCreate:
+        - Content:
+            Fn::Base64: !Sub
+            - |
+              cd /home/ec2-user/SageMaker
+              aws s3 cp --recursive s3://${SolutionsRefBucketBase}-${AWS::Region}/${SolutionsRefSource} .
+              touch stack_outputs.json
+              echo '{' >> stack_outputs.json
+              echo '  "AccountID": "${AWS::AccountId}",' >> stack_outputs.json
+              echo '  "AWSRegion": "${AWS::Region}",' >> stack_outputs.json
+              echo '  "IamRole": "${NotebookInstanceExecutionRoleArn}",' >> stack_outputs.json
+              echo '  "SolutionPrefix": "${SolutionPrefix}",' >> stack_outputs.json
+              echo '  "SolutionName": "Visual-perception-with-active-learning",' >> stack_outputs.json
+              echo '  "SolutionUpstreamS3Bucket": "${SolutionsRefBucketBase}-${AWS::Region}",' >> stack_outputs.json
+              echo '  "SolutionS3Bucket": "${SolutionS3BucketName}",' >> stack_outputs.json
+              echo '  "S3InputDataPrefix": "${S3InputDataPrefix}",' >> stack_outputs.json
+              echo '  "CognitoUserPool": "${CognitoUserPool}",' >> stack_outputs.json
+              echo '  "CognitoUserPoolGroup": "${CognitoUserPoolGroup}",' >> stack_outputs.json
+              echo '  "CognitoClientID": "${CognitoClientID}",' >> stack_outputs.json
+              echo '  "StepFunctionsActiveLearningPipeline": "${StepFunctionsActiveLearningPipeline}"' >> stack_outputs.json
+              echo '}' >> stack_outputs.json
+              sudo chown -R ec2-user:ec2-user .
+            - SolutionsRefBucketBase: !FindInMap [S3, !Ref StackVersion, BucketPrefix]
+              SolutionsRefSource: !FindInMap [SageMaker, Source, S3Key]
+Outputs:
+  SourceCode:
+    Description: "Open Jupyter IDE. This authenticate you against Jupyter."
+    Value: !Sub "https://console.aws.amazon.com/sagemaker/home?region=${AWS::Region}#/notebook-instances/openNotebook/${SolutionPrefix}-notebook-instance?view=classic"
+  NotebookInstance:
+    Description: "SageMaker Notebook instance to manually orchestrate data preprocessing and model training"
+    Value: !Sub "https://${SolutionPrefix}-notebook-instance.notebook.${AWS::Region}.sagemaker.aws/notebooks/active-learning-visual-perception.ipynb"

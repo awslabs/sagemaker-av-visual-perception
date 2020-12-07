@@ -1,0 +1,817 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "(SA0011) - sagemaker-av-visual-perception: Solution for using active learning for object detection. Version 1"
+Parameters:
+  SolutionPrefix:
+    Type: String
+    Default: "sagemaker-soln-avvp"
+    Description: |
+      Used to name resources created as part of this stack (and inside nested stacks too).
+      Can be the same as the stack name used by AWS CloudFormation, but this field has extra
+      constraints because it's used to name resources with restrictions (e.g. Amazon S3 bucket
+      names cannot contain capital letters).
+    AllowedPattern: '^sagemaker-soln-[a-z0-9\-]{1,20}$'
+    ConstraintDescription: |
+      Only allowed to use lowercase letters, hyphens and/or numbers.
+      Should also start with 'sagemaker-soln-avvp' for permission management.
+  IamRole:
+    Type: String
+    Default: ""
+    Description: |
+      IAM Role that will be attached to the resources created by this cloudformation to grant them permissions to
+      perform their required functions. This role should allow SageMaker and Lambda perform the required actions like
+      creating training jobs and processing jobs. If left blank, the template will attempt to create a role for you.
+      This can cause a stack creation error if you don't have privileges to create new roles.
+  StackVersion:
+    Description: |
+      CloudFormation Stack version.
+      Use 'release' version unless you are customizing the
+      CloudFormation templates and solution artifacts.
+    Type: String
+    Default: release
+    AllowedValues:
+      - release
+      - development
+  CreateSageMakerNotebookInstance:
+    Description: Whether to launch classic sagemaker notebook instance
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "false"
+  SageMakerNotebookInstanceType:
+    Description: Instance type of the SageMaker notebook instance
+    Type: String
+    Default:  "ml.m4.xlarge"
+  S3RawDataPrefix:
+    Description: Enter the S3 prefix where raw data manifest is stored.
+    Type: String
+    Default: "image-manifests"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: Solution Configuration
+        Parameters:
+          - SolutionPrefix
+          - IamRole
+          - StackVersion
+      -
+        Label:
+          default: S3 Configuration
+        Parameters:
+          - S3RawDataPrefix
+      -
+        Label:
+          default: SageMaker Configuration
+        Parameters:
+          - CreateSageMakerNotebookInstance
+          - SageMakerNotebookInstanceType
+    ParameterLabels:
+      SolutionPrefix:
+        default: Solution Resources Name Prefix
+      IamRole:
+        default: Solution IAM Role Arn
+      StackVersion:
+        default: Solution Stack Version
+      S3RawDataPrefix:
+        default: S3 Data Prefix
+      CreateSageMakerNotebookInstance:
+        default: Launch Classic SageMaker Notebook Instance
+      SageMakerNotebookInstanceType:
+        default: SageMaker Notebook Instance
+
+Mappings:
+  SolutionsS3BucketName:
+    development:
+      Prefix: sagemaker-solutions-devo
+    release:
+      Prefix: sagemaker-solutions-prod
+  Function:
+    ActiveLearningPipeline:
+      S3Key: "Visual-perception-with-active-learning/build/visual_perception_active_learning_pipeline.zip"
+
+Conditions:
+  CreateClassicSageMakerResources: !Equals [ !Ref CreateSageMakerNotebookInstance, "true" ]
+  CreateCustomSolutionRole: !Equals [!Ref IamRole, ""]
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${SolutionPrefix}-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: Configuring logging requires supplying an existing customer S3 bucket to store logs
+          - id: W51
+            reason: Default access policy suffices
+  PermissionsStack:
+    Type: "AWS::CloudFormation::Stack"
+    Condition: CreateCustomSolutionRole
+    Properties:
+      TemplateURL: !Sub
+        - "https://s3.${Region}.amazonaws.com/${SolutionRefBucketBase}-${Region}/Visual-perception-with-active-learning/deployment/permissions.yaml"
+        - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+          Region: !Ref AWS::Region
+      Parameters:
+        SolutionPrefix: !Ref SolutionPrefix
+        SolutionS3BucketName: !Ref S3Bucket
+        StackVersion: !Ref StackVersion
+  SolutionAssistantStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub
+        - "https://s3.${Region}.amazonaws.com/${SolutionRefBucketBase}-${Region}/Visual-perception-with-active-learning/deployment/solution-assistant/solution-assistant.yaml"
+        - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+          Region: !Ref AWS::Region
+      Parameters:
+        SolutionPrefix: !Ref SolutionPrefix
+        SolutionsRefBucketName: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        SolutionS3BucketName: !Sub "${SolutionPrefix}-${AWS::AccountId}-${AWS::Region}"
+        RoleArn: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+  CognitoStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Sub
+        - "https://s3.${Region}.amazonaws.com/${SolutionRefBucketBase}-${Region}/Visual-perception-with-active-learning/deployment/cognito.yaml"
+        - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+          Region: !Ref AWS::Region
+      Parameters:
+        SolutionPrefix: !Ref SolutionPrefix
+        SolutionsRefBucketName: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        SageMakerIAMRoleArn: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+  SageMakerStack:
+    Type: "AWS::CloudFormation::Stack"
+    Condition: CreateClassicSageMakerResources
+    Properties:
+      TemplateURL: !Sub
+        - "https://s3.${Region}.amazonaws.com/${SolutionRefBucketBase}-${Region}/Visual-perception-with-active-learning/deployment/notebook.yaml"
+        - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+          Region: !Ref AWS::Region
+      Parameters:
+        SolutionPrefix: !Ref SolutionPrefix
+        SolutionS3BucketName: !Sub "${SolutionPrefix}-${AWS::AccountId}-${AWS::Region}"
+        S3InputDataPrefix: !Ref S3RawDataPrefix
+        SageMakerNotebookInstanceType: !Ref SageMakerNotebookInstanceType
+        NotebookInstanceExecutionRoleArn: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+        StackVersion: !Ref StackVersion
+        CognitoUserPool: !GetAtt CognitoStack.Outputs.CognitoUserPool
+        CognitoUserPoolGroup: !GetAtt CognitoStack.Outputs.CognitoUserPoolGroup
+        CognitoClientID: !GetAtt CognitoStack.Outputs.CognitoUserPoolClient
+        StepFunctionsActiveLearningPipeline: !Ref ActiveLearningLoop
+  ActiveLearning:
+    Type: 'AWS::StepFunctions::StateMachine'
+    Properties:
+      RoleArn: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      StateMachineName: !Sub "${SolutionPrefix}-ActiveLearning"
+      DefinitionString:
+        'Fn::Sub': |
+          {
+            "Comment": "Active Learning logic with training, inference and predictions",
+            "StartAt": "ShouldCreateValidationSet",
+            "States": {
+              "ShouldCreateValidationSet": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                   "Variable": "$.meta_data.counts.validation",
+                   "NumericGreaterThan": 0,
+                   "Next": "PrepareForTraining"
+                  }
+                  ],
+                "Default": "CreateValidationSet"
+              },
+              "CreateValidationSet": {
+                "Type": "Task",
+                "Resource": "${CreateValidationSet.Arn}",
+                "Parameters": {
+                   "LabelAttributeName.$": "$.LabelAttributeName",
+                   "meta_data.$": "$.meta_data"
+                },
+                "ResultPath": "$.meta_data",
+                "Next": "PrepareForTraining"
+              },
+              "PrepareForTraining": {
+                "Type": "Task",
+                "Resource": "${PrepareForTraining.Arn}",
+                "Parameters": {
+                  "LabelingJobNamePrefix.$": "$.LabelingJobNamePrefix",
+                  "LabelAttributeName.$": "$.LabelAttributeName",
+                  "ManifestS3Uri.$": "$.meta_data.IntermediateManifestS3Uri",
+                  "meta_data.$": "$.meta_data"
+                },
+                "ResultPath":"$.meta_data.training_config",
+                "Next": "CreateTrainingJob"
+              },
+              "CreateTrainingJob": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::sagemaker:createTrainingJob.sync",
+                "Parameters": {
+                  "TrainingJobName.$": "$.meta_data.training_config.TrainingJobName",
+                  "ResourceConfig.$": "$.meta_data.training_config.ResourceConfig",
+                  "AlgorithmSpecification.$": "$.meta_data.training_config.AlgorithmSpecification",
+                  "HyperParameters.$": "$.meta_data.training_config.HyperParameters",
+                  "OutputDataConfig": {
+                      "S3OutputPath.$": "$.meta_data.training_config.S3OutputPath"
+                  },
+                  "StoppingCondition": {
+                      "MaxRuntimeInSeconds": 432000
+                  },
+                  "RoleArn.$": "$.RoleArn",
+                  "InputDataConfig": [
+                    {
+                      "ChannelName":"train",
+                      "ContentType": "application/x-recordio",
+                      "InputMode": "Pipe",
+                      "RecordWrapperType": "RecordIO",
+                      "DataSource": {
+                        "S3DataSource": {
+                          "S3DataType":"AugmentedManifestFile",
+                          "AttributeNames.$": "$.meta_data.training_config.AttributeNames",
+                          "S3Uri.$": "$.meta_data.training_config.trainS3Uri",
+                          "S3DataDistributionType":"FullyReplicated"
+                        }
+                      }
+                    },
+                    {
+                      "ChannelName":"validation",
+                      "ContentType": "application/x-recordio",
+                      "InputMode": "Pipe",
+                      "RecordWrapperType": "RecordIO",
+                      "DataSource": {
+                        "S3DataSource": {
+                          "S3DataType":"AugmentedManifestFile",
+                          "AttributeNames.$": "$.meta_data.training_config.AttributeNames",
+                          "S3Uri.$": "$.meta_data.ValidationS3Uri",
+                          "S3DataDistributionType":"FullyReplicated"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "ResultPath":"$.training_job_result",
+                "Next": "SaveModel"
+              },
+              "SaveModel" : {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::sagemaker:createModel",
+                "Parameters": {
+                   "PrimaryContainer": {
+                      "Image.$": "$.meta_data.training_config.AlgorithmSpecification.TrainingImage",
+                      "Environment": {},
+                      "ModelDataUrl.$": "$.training_job_result.ModelArtifacts.S3ModelArtifacts"
+                   },
+                   "ExecutionRoleArn.$": "$.RoleArn",
+                   "ModelName.$": "$.meta_data.training_config.TrainingJobName"
+                },
+                "ResultPath": "$.save_model_result",
+                "Next": "PrepareForInference"
+              },
+              "PrepareForInference": {
+                "Type": "Task",
+                "Resource": "${PrepareForInference.Arn}",
+                "Parameters": {
+                  "LabelAttributeName.$": "$.LabelAttributeName",
+                  "meta_data.$": "$.meta_data"
+                },
+                "ResultPath": "$.meta_data",
+                "Next": "CreateTransformJob"
+              },
+              "CreateTransformJob": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::sagemaker:createTransformJob.sync",
+                "Parameters": {
+                  "BatchStrategy": "MultiRecord",
+                  "ModelName.$": "$.meta_data.transform_config.ModelName",
+                  "TransformJobName.$": "$.meta_data.transform_config.TransformJobName",
+                  "TransformInput": {
+                    "CompressionType": "None",
+                    "ContentType": "application/jsonlines",
+                    "SplitType": "Line",
+                    "DataSource": {
+                      "S3DataSource": {
+                         "S3DataType": "S3Prefix",
+                         "S3Uri.$": "$.meta_data.UnlabeledS3Uri"
+                       }
+                    }
+                  },
+                  "TransformOutput": {
+                     "Accept": "application/jsonlines",
+                     "AssembleWith": "Line",
+                     "S3OutputPath.$": "$.meta_data.transform_config.S3OutputPath"
+                  },
+                  "TransformResources": {
+                     "InstanceCount": 1,
+                     "InstanceType": "ml.c5.xlarge"
+                  },
+                  "DataProcessing": {
+                     "InputFilter": "$",
+                     "JoinSource": "Input",
+                     "OutputFilter": "$['id','SageMakerOutput']"
+                  }
+                },
+               "ResultPath":"$.transform_job_result",
+               "Next": "PerformActiveLearning"
+              },
+              "PerformActiveLearning": {
+                "Type": "Task",
+                "Resource": "${PerformActiveLearning.Arn}",
+                "Parameters": {
+                  "LabelingJobNamePrefix.$": "$.LabelingJobNamePrefix",
+                  "LabelAttributeName.$": "$.LabelAttributeName",
+                  "LabelCategoryConfigS3Uri.$": "$.LabelCategoryConfigS3Uri",
+                  "meta_data.$": "$.meta_data"
+                },
+                "ResultPath": "$.meta_data",
+                "Next": "ExportPartialOutput"
+              },
+              "ExportPartialOutput": {
+                "Type": "Task",
+                "Resource": "${ExportPartialOutput.Arn}",
+                "Parameters": {
+                  "ManifestS3Uri.$":"$.meta_data.IntermediateManifestS3Uri",
+                  "OutputS3Uri.$": "$.meta_data.autoannotations"
+                 },
+                 "ResultPath": null,
+                 "Next": "SaveModelArnToMetaData"
+              },
+              "SaveModelArnToMetaData" : {
+                "Type": "Pass",
+                "Parameters": {
+                   "TrainedModelArn.$": "$.save_model_result.ModelArn"
+                },
+                "ResultPath": "$.meta_data.model_output",
+                "Next": "FilterOutput"
+              },
+              "FilterOutput" : {
+                "Type": "Pass",
+                "Parameters": {
+                   "meta_data.$": "$.meta_data"
+                },
+                "ResultPath": "$",
+                "End": true
+              }
+            }
+          }
+  ActiveLearningLoop:
+    Type: 'AWS::StepFunctions::StateMachine'
+    Properties:
+      RoleArn: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      StateMachineName: !Sub "${SolutionPrefix}-ActiveLearningLoop"
+      DefinitionString:
+        'Fn::Sub': |
+          {
+            "Comment": "Active learning loop state machine. This state machine contains the Active Learning statemachine and other lambdas to orchestrate the process.",
+            "StartAt": "CopyInputManifest",
+            "States": {
+              "CopyInputManifest": {
+                "Type": "Task",
+                "Parameters": {
+                  "ManifestS3Uri.$": "$.InputConfig.DataSource.S3DataSource.ManifestS3Uri",
+                  "S3OutputPath.$": "$.OutputConfig.S3OutputPath"
+                },
+                "Resource": "${CopyInputManfiest.Arn}",
+                "ResultPath": "$.meta_data",
+                "Next": "AddRecordId"
+              },
+              "AddRecordId": {
+                "Type": "Task",
+                "Parameters": {
+                  "ManifestS3Uri.$": "$.meta_data.IntermediateManifestS3Uri"
+                },
+                "Resource": "${AddRecordId.Arn}",
+                "ResultPath": null,
+                "Next": "GetCounts"
+              },
+              "GetCounts": {
+                "Type": "Task",
+                "Parameters": {
+                  "LabelAttributeName.$": "$.LabelAttributeName",
+                  "meta_data.$": "$.meta_data"
+                },
+                "Resource": "${GetCounts.Arn}",
+                "ResultPath": "$.meta_data.counts",
+                "Next": "CheckForCompletion1"
+              },
+              "CheckForCompletion1": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                   "Variable": "$.meta_data.counts.unlabeled",
+                   "NumericGreaterThan": 0,
+                   "Next": "ShouldStartActiveLearning"
+                  }
+                  ],
+                "Default": "PerformFinalExport"
+              },
+              "ShouldStartActiveLearning": {
+                "Type": "Choice",
+                "Choices": [
+                 {
+                   "Variable": "$.meta_data.counts.human_label_percentage",
+                   "NumericGreaterThanEquals": 20,
+                   "Next": "StartActiveLearningExecution"
+                 }
+                 ],
+                 "Default": "PrepareForHumanLabeling"
+              },
+              "StartActiveLearningExecution": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::states:startExecution.sync",
+                "Parameters": {
+                   "StateMachineArn": "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${SolutionPrefix}-ActiveLearning",
+                   "Input": {
+                      "meta_data.$": "$.meta_data",
+                      "LabelAttributeName.$": "$.LabelAttributeName",
+                      "LabelingJobNamePrefix.$": "$.LabelingJobNamePrefix",
+                      "LabelCategoryConfigS3Uri.$": "$.LabelCategoryConfigS3Uri",
+                      "RoleArn.$": "$.RoleArn"
+                   }
+                },
+                "ResultPath": "$.active_learning_result",
+                "Next": "UpdateMetaData"
+              },
+              "UpdateMetaData": {
+                "Type": "Task",
+                "Resource": "${UpdateMetaData.Arn}",
+                "Parameters": {
+                   "active_learning_output.$":"$.active_learning_result.Output"
+                },
+                "ResultPath": "$.meta_data",
+                "Next": "CheckForCompletion2"
+              },
+              "PrepareForHumanLabeling": {
+                "Type": "Task",
+                "Parameters": {
+                   "LabelingJobNamePrefix.$":"$.LabelingJobNamePrefix",
+                   "LabelAttributeName.$":"$.LabelAttributeName",
+                   "ManifestS3Uri.$":"$.meta_data.IntermediateManifestS3Uri",
+                   "human_label_done_count.$":"$.meta_data.counts.human_label",
+                   "input_total.$":"$.meta_data.counts.input_total",
+                   "IntermediateFolderUri.$":"$.meta_data.IntermediateFolderUri"
+                },
+                "Resource": "${PrepareForHumanLabeling.Arn}",
+                "ResultPath": "$.meta_data.human_label_config",
+                "Next": "CreateLabelingJob"
+              },
+              "CreateLabelingJob": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::sagemaker:createLabelingJob.sync",
+                "Parameters": {
+                  "LabelingJobName.$": "$.meta_data.human_label_config.labeling_job_name",
+                  "LabelAttributeName.$": "$.LabelAttributeName",
+                  "HumanTaskConfig.$": "$.HumanTaskConfig",
+                  "RoleArn.$": "$.RoleArn",
+                  "LabelCategoryConfigS3Uri.$": "$.LabelCategoryConfigS3Uri",
+                  "InputConfig": {
+                    "DataAttributes.$": "$.InputConfig.DataAttributes",
+                    "DataSource": {
+                      "S3DataSource": {
+                        "ManifestS3Uri.$": "$.meta_data.human_label_config.human_input_s3_uri"
+                       }
+                    }
+                   },
+                   "OutputConfig": {
+                     "S3OutputPath.$": "$.meta_data.human_label_config.labeling_job_output_uri"
+                   }
+                 },
+                 "ResultPath":"$.labeling_job_result",
+                 "Next": "ExportPartialOutput"
+              },
+              "ExportPartialOutput": {
+                "Type": "Task",
+                "Resource": "${ExportPartialOutput.Arn}",
+                "Parameters": {
+                  "ManifestS3Uri.$":"$.meta_data.IntermediateManifestS3Uri",
+                  "OutputS3Uri.$": "$.labeling_job_result.LabelingJobOutput.OutputDatasetS3Uri"
+                 },
+                 "ResultPath": null,
+                 "Next": "GetCounts"
+              },
+              "CheckForCompletion2": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                   "Variable": "$.meta_data.counts.selected",
+                   "NumericGreaterThan": 0,
+                   "Next": "PrepareForSelectedHumanLabeling"
+                  }
+                  ],
+                "Default": "PerformFinalExport"
+              },
+              "PrepareForSelectedHumanLabeling": {
+                "Type": "Pass",
+                "Parameters": {
+                   "human_input_s3_uri.$":"$.meta_data.selections_s3_uri",
+                   "labeling_job_name.$":"$.meta_data.selected_job_name",
+                   "labeling_job_output_uri.$":"$.meta_data.selected_job_output_uri"
+                },
+                "ResultPath": "$.meta_data.human_label_config",
+                "Next": "CreateLabelingJob"
+              },
+              "PerformFinalExport": {
+                "Type": "Task",
+                "Resource": "${PerformFinalExport.Arn}",
+                "Parameters": {
+                  "ManifestS3Uri.$":"$.meta_data.IntermediateManifestS3Uri",
+                  "FinalOutputS3Uri.$": "$.OutputConfig.S3OutputPath"
+                 },
+                 "ResultPath": "$.FinalManifestS3Uri",
+                 "Next": "ConstructFinalResponse"
+              },
+              "ConstructFinalResponse": {
+                "Type": "Pass",
+                "Parameters": {
+                    "FinalManifestS3Uri.$": "$.FinalManifestS3Uri",
+                    "TrainedModelArn.$": "$.meta_data.model_output.TrainedModelArn"
+                },
+                "ResultPath": "$",
+                "End": true
+              }
+             }
+           }
+  AddRecordId:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 'This function adds a sequential id to each record in the input manifest.'
+      Handler: Bootstrap/add_record_id.lambda_handler
+      FunctionName: !Sub "${SolutionPrefix}-add-record-id"
+      Role: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      Code:
+        S3Bucket: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        S3Key: !FindInMap [Function, ActiveLearningPipeline, S3Key]
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 3008
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Passed in role or created role both have cloudwatch write permissions
+  CopyInputManfiest:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 'This function does a copy of the input manifest to the a location within the specified output path.'
+      Handler: Bootstrap/copy_input_manifest.lambda_handler
+      FunctionName: !Sub "${SolutionPrefix}-copy-input-manifest"
+      Role: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      Code:
+        S3Bucket: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        S3Key: !FindInMap [Function, ActiveLearningPipeline, S3Key]
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 3008
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Passed in role or created role both have cloudwatch write permissions
+  GetCounts:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 'This function returns the counts of the labeling job records.'
+      Handler: MetaData/get_counts.lambda_handler
+      FunctionName: !Sub "${SolutionPrefix}-get-counts"
+      Role: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      Code:
+        S3Bucket: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        S3Key: !FindInMap [Function, ActiveLearningPipeline, S3Key]
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 3008
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Passed in role or created role both have cloudwatch write permissions
+  PrepareForHumanLabeling:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 'Creates input parameters required for the first human labeling job.'
+      Handler: Labeling/prepare_for_labeling.lambda_handler
+      FunctionName: !Sub "${SolutionPrefix}-prepare-for-human-labelling"
+      Role: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      Code:
+        S3Bucket: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        S3Key: !FindInMap [Function, ActiveLearningPipeline, S3Key]
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 3008
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Passed in role or created role both have cloudwatch write permissions
+  ExportPartialOutput:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 'This function is used to merge partial outputs to the manifest. The result is uploaded to s3.'
+      Handler: Output/export_partial.lambda_handler
+      FunctionName: !Sub "${SolutionPrefix}-export-partial-output"
+      Role: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      Code:
+        S3Bucket: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        S3Key: !FindInMap [Function, ActiveLearningPipeline, S3Key]
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 3008
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Passed in role or created role both have cloudwatch write permissions
+  CreateValidationSet:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 'This method selects 10% of the input manifest as validation and creates an s3 file containing the validation objects.'
+      Handler: ActiveLearning/create_validation_set.lambda_handler
+      FunctionName: !Sub "${SolutionPrefix}-create-validation-set"
+      Role: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      Code:
+        S3Bucket: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        S3Key: !FindInMap [Function, ActiveLearningPipeline, S3Key]
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 3008
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Passed in role or created role both have cloudwatch write permissions
+  PrepareForTraining:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 'This function sets up all the input parameters required for the training job.'
+      Handler: ActiveLearning/prepare_for_training.lambda_handler
+      FunctionName: !Sub "${SolutionPrefix}-prepare-for-training"
+      Role: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      Code:
+        S3Bucket: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        S3Key: !FindInMap [Function, ActiveLearningPipeline, S3Key]
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 3008
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Passed in role or created role both have cloudwatch write permissions
+  PrepareForInference:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 'This function sets up all the input parameters required for the transform job.'
+      Handler: ActiveLearning/prepare_for_inference.lambda_handler
+      FunctionName: !Sub "${SolutionPrefix}-prepare-for-inference"
+      Role: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      Code:
+        S3Bucket: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        S3Key: !FindInMap [Function, ActiveLearningPipeline, S3Key]
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 3008
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Passed in role or created role both have cloudwatch write permissions
+  PerformActiveLearning:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 'This function generates auto annotatations and performs active learning.'
+      Handler: ActiveLearning/perform_active_learning.lambda_handler
+      FunctionName: !Sub "${SolutionPrefix}-perform-active-learning"
+      Role: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      Code:
+        S3Bucket: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        S3Key: !FindInMap [Function, ActiveLearningPipeline, S3Key]
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 3008
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Passed in role or created role both have cloudwatch write permissions
+  PerformFinalExport:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 'This function is used to copy the final completed manifest to the output location.'
+      Handler: Output/export_final.lambda_handler
+      FunctionName: !Sub "${SolutionPrefix}-perform-final-export"
+      Role: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      Code:
+        S3Bucket: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        S3Key: !FindInMap [Function, ActiveLearningPipeline, S3Key]
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 3008
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Passed in role or created role both have cloudwatch write permissions
+  UpdateMetaData:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 'This function is used to update the meta_data values based on active learning ouput.'
+      Handler: MetaData/update.lambda_handler
+      FunctionName: !Sub "${SolutionPrefix}-update-metadata"
+      Role: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+      Code:
+        S3Bucket: !Sub
+          - "${SolutionRefBucketBase}-${AWS::Region}"
+          - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+        S3Key: !FindInMap [Function, ActiveLearningPipeline, S3Key]
+      Runtime: python3.7
+      Timeout: 900
+      MemorySize: 3008
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Passed in role or created role both have cloudwatch write permissions
+
+Outputs:
+  SourceCode:
+    Condition: CreateClassicSageMakerResources
+    Description: "Open Jupyter IDE. This authenticate you against Jupyter."
+    Value: !GetAtt SageMakerStack.Outputs.SourceCode
+
+  NotebookInstance:
+    Condition: CreateClassicSageMakerResources
+    Description: "SageMaker Notebook instance to manually orchestrate data preprocessing and model training"
+    Value: !GetAtt SageMakerStack.Outputs.NotebookInstance
+
+  IamRole:
+    Description: "Arn of SageMaker Execution Role"
+    Value: !If [CreateCustomSolutionRole, !GetAtt PermissionsStack.Outputs.RoleArn, !Ref IamRole]
+
+  SolutionPrefix:
+    Description: "Solution Prefix for naming SageMaker transient resources"
+    Value: !Ref SolutionPrefix
+
+  SolutionName:
+    Description: "Name of the solution"
+    Value: "Visual-perception-with-active-learning"
+
+  SolutionUpstreamS3Bucket:
+    Description: "Upstream solutions bucket"
+    Value: !Sub
+      - "${SolutionRefBucketBase}-${AWS::Region}"
+      - SolutionRefBucketBase: !FindInMap [SolutionsS3BucketName, !Ref StackVersion, Prefix]
+
+  SolutionS3Bucket:
+    Description: "Solution S3 bucket name"
+    Value: !Sub "${SolutionPrefix}-${AWS::AccountId}-${AWS::Region}"
+
+  CognitoUserPool:
+    Description: "Cognito user pool name"
+    Value: !GetAtt CognitoStack.Outputs.CognitoUserPool
+
+  CognitoUserPoolGroup:
+    Description: "Cognito user pool group name"
+    Value: !GetAtt CognitoStack.Outputs.CognitoUserPoolGroup
+
+  CognitoClientID:
+    Description: "cognito client ID"
+    Value: !GetAtt CognitoStack.Outputs.CognitoUserPoolClient
+
+  StepFunctionsActiveLearningPipeline:
+    Description: "Step functions active learning pipeline state machine"
+    Value: !Ref ActiveLearningLoop

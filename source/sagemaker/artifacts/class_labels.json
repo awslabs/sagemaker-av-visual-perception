@@ -1,0 +1,11 @@
+{
+  "document-version": "2018-11-28",
+  "labels": [
+      {
+          "label": "Pedestrian"
+      }
+  ],
+  "class-map": {
+    "0": "Pedestrian"
+  }
+}
